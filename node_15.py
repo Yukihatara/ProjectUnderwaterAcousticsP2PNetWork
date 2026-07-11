@@ -607,7 +607,19 @@ def receive_handler():
                         Отправляем пакеты дальше, изменя route. mode=None, чтобы избежать ненужной 
                         ретрансляции"""
                         
-                continue
+        except socket.timeout:
+            continue
+        except ConnectionResetError as cre:  # ← СПЕЦИФИЧЕСКОЕ ИСКЛЮЧЕНИЕ ПЕРВЫМ
+            print(f"[{node_id}] Подключение к несуществующему узлу <{cre}>")
+            import traceback
+            traceback.print_exc()
+            continue
+        except json.JSONDecodeError as e:
+            print(f"[{node_id}] Ошибка декодирования JSON: {e}")
+            continue
+        except Exception as e:  # ← ОБЩЕЕ ИСКЛЮЧЕНИЕ ПОСЛЕДНИМ
+            print(f"[{node_id}] Ошибка приема: {type(e).__name__}: {e}")
+            continue
 
 def receive_from():
     while True:
@@ -815,7 +827,7 @@ def Hello():
         #     else:
         #         break
         if recieve_lock.locked():
-            time.sleep 0.1
+            time.sleep(0.1)
             continue
         
             with send_lock:
@@ -825,7 +837,7 @@ def Hello():
             for key, value in network_status[node_id]['neibors'].items():
                 print(f"| - [{key}]:\n |{'-'*5}>position: {value['position']}\n |{'-'*5}>packets_id: {value['packets']}")
         else:    
-        time.sleep(47.4)
+            time.sleep(47.4)
         
 # def Hello():
 #     time.sleep(12)

@@ -164,8 +164,9 @@ def send_to(target_id, data, purpose_nodes, Route, msg_type):
         
         # Создаем преамбулу сообщения
         temp1 = {'type': 'CONFIG',
-                 'time_start': time.time(),
-                 'sender': node_id,}
+                 'sender': node_id,
+                 'recv_msg': msg_type, 
+                 'time_start': time.time(),}
 
         temp1_json = json.dumps(temp1).encode()
         length_temp1_json = len(temp1_json)
@@ -423,7 +424,7 @@ def Waiting(waiting_time, current_time):
         # Один раз запускаем обработку
         process_request_packets(full_msg)
 
-active_rx = {}
+active_rx = {} # Exemple {'A':{time_start: 9999, msg_type: 'Hello'}}
 flag_recieve = False
 
 def receive_handler():
@@ -443,21 +444,35 @@ def receive_handler():
             sender = msg.get('sender')
             
             if msg.get('type') == 'CONFIG':
-                flag_recieve = True
-                active_rx[sender] = msg.get('time_start')
+                active_rx[sender] = {'time_start':  msg.get('time_start'),
+                                     'recv_msg': msg.get('recv_msg')}
                 continue
                 
             if msg.get('type') == 'Hello':
-                print(f"\nПолучил {msg.get('type')} от {sender}")
-            
-                # Обновляем информацию о своих соседях
-                network_status[node_id]['neibors'].update({sender: {'position': msg.get('position'), 
-                                                                    'packets': msg.get('packets_id'), 
-                                                                    'is_sink': msg.get('is_sink')
-                                                                    }})
-                continue
+                if sender in active_rx: # =================================== #
+                    if msg.get('type') in active_rx[sender]['recv_msg']: # == #
+                        
+                        # Опустошаем active_rx, когда полностью приняли сообщение
+                        active_rx.pop(sender)
+                        # ====================================#
+                        
+                        print(f"\nПолучил {msg.get('type')} от {sender}")
+                    
+                        # Обновляем информацию о своих соседях
+                        network_status[node_id]['neibors'].update({sender: {'position': msg.get('position'), 
+                                                                            'packets': msg.get('packets_id'), 
+                                                                            'is_sink': msg.get('is_sink')
+                                                                            }})
+                        continue
             
             if msg.get('type') == 'Known_Fullset':
+                if sender in active_rx: # =================================== #
+                    if msg.get('type') in active_rx[sender]['recv_msg']: # == #
+                        
+                        # Опустошаем active_rx, когда полностью приняли сообщение
+                        active_rx.pop(sender)
+                        # ====================================#
+                        
                 """
                 'route': list(...)
                 'data' = {'neibors': network_status[node_id]['neibors'],
@@ -493,6 +508,12 @@ def receive_handler():
                 continue
             
             if msg.get('type') == 'Request':
+                if sender in active_rx: # =================================== #
+                    if msg.get('type') in active_rx[sender]['recv_msg']: # == #
+                        
+                        # Опустошаем active_rx, когда полностью приняли сообщение
+                        active_rx.pop(sender)
+                        # ====================================#
                 
                 recievers = msg.get('recievers')
                 
@@ -523,6 +544,12 @@ def receive_handler():
                 continue
                 
             if msg.get('type') == 'Packets':
+                if sender in active_rx: # =================================== #
+                    if msg.get('type') in active_rx[sender]['recv_msg']: # == #
+                        
+                        # Опустошаем active_rx, когда полностью приняли сообщение
+                        active_rx.pop(sender)
+                        # ====================================#
                 
                 recievers = msg.get('recievers')
                 # Если в сообщении нет отправилея / Если отправил сам себе / Если получателем являюсь не я
@@ -621,7 +648,7 @@ def receive_handler():
             print(f"[{node_id}] Ошибка приема: {type(e).__name__}: {e}")
             continue
 
-def receive_from():
+def receive_from(): # Here must be only recive config message!
     while True:
         try:
             data, addr = sock.recvfrom(4096)
@@ -639,165 +666,10 @@ def receive_from():
             
             if msg.get('type') == 'CONFIG':
                 with recieve_lock:
-                    active_rx[sender] = msg.get('time_start')
+                    active_rx[sender] = {'time_start':  msg.get('time_start'),
+                                         'recv_msg': msg.get('recv_msg')}
                     receive_handler()
                 continue
-         
-            if msg.get('type') == 'Hello':
-                print(f"\nПолучил {msg.get('type')} от {sender}")
-            
-                # Обновляем информацию о своих соседях
-                network_status[node_id]['neibors'].update({sender: {'position': msg.get('position'), 
-                                                                    'packets': msg.get('packets_id'), 
-                                                                    'is_sink': msg.get('is_sink')
-                                                                    }})
-
-            if msg.get('type') == 'Known_Fullset':
-                """
-                'route': list(...)
-                'data' = {'neibors': network_status[node_id]['neibors'],
-                        'fullset': temp_data['fullset'],}
-                """
-                recievers = msg.get('recievers')
-                
-                if not sender or sender == node_id or node_id not in recievers :
-                # if not sender or sender == node_id:
-                    continue
-                
-                print(f"\nПолучил {msg.get('type')} от {sender}")
-        
-                # Заполняю знания
-                temp_storage.update(msg.get('data').get('fullset'))
-                
-                # Если я конечный узел, останавливаюсь
-                if is_sink == '1':
-                    continue
-                
-                # Если среди моих сосдей сток и он получил данные - останавливаюсь
-                stop_var = 0
-                for val in msg.get('data').get('neibors').values():
-                    if val['is_sink'] == '1':
-                        print('Стоковый узел получил Мета-данные')
-                        stop_var += 1
-                        break
-                if stop_var == 1:
-                    continue
-
-                # Запускаем алгоритм ретрансляции
-                retranslation(msg, 'Fullset')
-            
-            if msg.get('type') == 'Request':
-                
-                recievers = msg.get('recievers')
-                
-                if not sender or sender == node_id or node_id not in recievers:
-                # if not sender or sender == node_id:
-                    continue
-                
-                print(f"\nПолучил {msg.get('type')} от {sender}: {list(msg.get('data').get('need_packets'))}")
-
- 
-                """
-                msg_request_packets = {
-                    'neibors': network_status[node_id]['neibors'],
-                    'need_packets': list(need_packets),}
-                """
-                with buff1_lock:
-                    was_empty = len(buff_msg_req) == 0
-                    buff_msg_req.append(msg)
-
-                # Запускаем таймер ТОЛЬКО если буфер был пустой
-                if was_empty:
-                    threading.Thread(
-                        target=Waiting,
-                        args=(5, time.time()),   # 5 секунд (можно изменить)
-                        daemon=True
-                    ).start()
-                
-            if msg.get('type') == 'Packets':
-                
-                recievers = msg.get('recievers')
-                # Если в сообщении нет отправилея / Если отправил сам себе / Если получателем являюсь не я
-                if not sender or sender == node_id or node_id not in recievers:
-                # if not sender or sender == node_id:
-                    continue
-
-                packets = data[4+length_msg_byte_info:]
-                
-                if len(packets) == 0:
-                    print(f"[{node_id}] Получены пакеты, но нет данных!")
-                    continue
-                
-                # offset - смещение
-                ofset = 0 #---------# 
-                
-                pkg_folder_name_length = struct.unpack('!B', packets[:1])[0]
-                
-                ofset += 1 #---------#
-                
-                pkg_folder_name = packets[ofset:ofset+pkg_folder_name_length].decode('utf-8')
-                
-                ofset += pkg_folder_name_length
-                
-                # Создаем папку для созранения, если ее нет
-                path_to_save = 'Node_' + node_id + '/Packages/' + pkg_folder_name
-                os.makedirs(path_to_save, exist_ok=True)
-                
-                new_packets = [] # Список всех новых пакетов
-                while ofset < len(packets):
-                    
-                    """Get packets name and value"""
-                    pckg_name_length = struct.unpack('!B', packets[ofset:ofset+1])[0]
-                    
-                    ofset += 1 #---------#
-                    
-                    pckg_name = packets[ofset: ofset+pckg_name_length].decode('utf-8')
-                    new_packets.append(pckg_name) # Write new_packets
-                    
-                    ofset += pckg_name_length #---------#
-                    
-                    pkcg_data = packets[ofset:ofset+60] 
-                    
-                    ofset += 60 #---------#
-                    
-                    # Save packets in my storage
-                    path_to_save_file = path_to_save + '/' + pckg_name + '.bin'
-                    with open(path_to_save_file, 'wb') as ptsf:
-                        ptsf.write(pkcg_data)
-                
-                print(f"\nПолучил PACKETS от {sender}: {new_packets}")
-                
-                if 'packets' not in network_status[node_id]:
-                    network_status[node_id]['packets'] = {}
-                    
-                if pkg_folder_name not in network_status[node_id]['packets']:
-                    network_status[node_id]['packets'][pkg_folder_name] = []
-                    
-                network_status[node_id]['packets'][pkg_folder_name] += new_packets
-                    
-                print(f"[{node_id}] Обновил свои пакеты в network_status:\n  - {network_status[node_id]['packets']}")
-                
-                # Если были получены пакеты и в route есть следующие получатели
-                if msg['route'] != list():
-                    # Необходимо разделить на два сообщения
-                    if 'neibors' in msg:
-                        # Получаем список соседей, который совместо учавствуют в ретрансляции (актуализированный)
-                        Neibors = msg.get('neibors') # Абоненты, которые учавствуют в передаче
- 
-                        msg_to_send = msg.copy()
-                    
-                        msg_to_send.pop('neibors')
-                        
-                        msg_to_send['data'] = {'neibors': Neibors, 
-                                               'need_packets': {pkg_folder_name: new_packets}}
-                                
-                        process_request_packets(msg_to_send)
-                        
-                        """Формируем как при request данные. Исскусствено созданный need_packets,
-                        чтобы узлы могли распределить между собой нагрузку. local_need в таком
-                        случае будет равен нулю, посколку need_packets состоит из имеющихся пакетов.
-                        Отправляем пакеты дальше, изменя route. mode=None, чтобы избежать ненужной 
-                        ретрансляции"""
          
         except socket.timeout:
             continue

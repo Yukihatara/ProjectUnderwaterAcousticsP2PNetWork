@@ -170,7 +170,7 @@ def send_to(target_id, data, purpose_nodes, Route, msg_type):
 
         temp1_json = json.dumps(temp1).encode()
         length_temp1_json = len(temp1_json)
-        CONFIG = struct.pack(f'!{length_temp1_json}s', length_temp1_json, temp1_json)
+        CONFIG = struct.pack(f'!I{length_temp1_json}s', length_temp1_json, temp1_json)
         
         time.sleep(total_delay) # Ждем время распространения сигнала
         
@@ -427,8 +427,8 @@ def Waiting(waiting_time, current_time):
 active_rx = {} # Exemple {'A':{time_start: 9999, msg_type: 'Hello'}}
 flag_recieve = False
 
-def receive_handler():
-    while True:
+def receive_cycle():
+    while len(active_rx) > 0:
         try:
             data, addr = sock.recvfrom(4096)
             
@@ -451,6 +451,7 @@ def receive_handler():
             if msg.get('type') == 'Hello':
                 if sender in active_rx: # =================================== #
                     if msg.get('type') in active_rx[sender]['recv_msg']: # == #
+                        
                         
                         # Опустошаем active_rx, когда полностью приняли сообщение
                         active_rx.pop(sender)
@@ -668,7 +669,7 @@ def receive_from(): # Here must be only recive config message!
                 with recieve_lock:
                     active_rx[sender] = {'time_start':  msg.get('time_start'),
                                          'recv_msg': msg.get('recv_msg')}
-                    receive_handler()
+                    receive_cycle()
                 continue
          
         except socket.timeout:

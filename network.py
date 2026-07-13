@@ -23,6 +23,3 @@ def create_socket(port, clearing = True):
         sock.setblocking(True)
         print(f"Очищено {cleared} старых пакетов")
     return sock
-    
-    
-    

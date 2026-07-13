@@ -649,7 +649,7 @@ def receive_cycle():
             print(f"[{node_id}] Ошибка приема: {type(e).__name__}: {e}")
             continue
 
-def receive_from(): # Here must be only recive config message!
+def receive_from(): # Here must be only recive "CONFIG" message!
     while True:
         try:
             data, addr = sock.recvfrom(4096)
@@ -703,14 +703,14 @@ def Hello():
             time.sleep(0.1)
             continue
         
-            with send_lock:
-            # if send_lock.acquire(timeout=5)
-                send_in(msg_type='Hello',)
-            
-            for key, value in network_status[node_id]['neibors'].items():
-                print(f"| - [{key}]:\n |{'-'*5}>position: {value['position']}\n |{'-'*5}>packets_id: {value['packets']}")
-        else:    
-            time.sleep(47.4)
+        with send_lock:
+        # if send_lock.acquire(timeout=5)
+            send_in(msg_type='Hello',)
+        
+        for key, value in network_status[node_id]['neibors'].items():
+            print(f"| - [{key}]:\n |{'-'*5}>position: {value['position']}\n |{'-'*5}>packets_id: {value['packets']}")
+        
+        time.sleep(47.4)
         
 # def Hello():
 #     time.sleep(12)

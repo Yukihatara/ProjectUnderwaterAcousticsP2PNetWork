@@ -3,20 +3,28 @@ import json
 import math
 
 # Конфигурация
+# NODES = {
+#     'A': {'port': 5001, 'position': (0, 100)},
+#     'B': {'port': 5002, 'position': (50, 120)},
+#     'C': {'port': 5003, 'position': (50, 80)},
+#     'D': {'port': 5004, 'position': (50, 40)},
+#     'E': {'port': 5005, 'position': (100, 100)},
+# }
+
 NODES = {
-    'A': {'port': 5001, 'position': (0, 100)},
-    'B': {'port': 5002, 'position': (50, 120)},
-    'C': {'port': 5003, 'position': (50, 80)},
-    'D': {'port': 5004, 'position': (50, 40)},
-    'E': {'port': 5005, 'position': (100, 100)},
+    'A': {'port': 5001, 'position': (0, 1000)},
+    'B': {'port': 5002, 'position': (500, 1210)},
+    'C': {'port': 5003, 'position': (500, 800)},
+    'D': {'port': 5004, 'position': (500, 400)},
+    'E': {'port': 5005, 'position': (1000, 999  )},
 }
 
-HELLO_INTERVAL = 5  # Отправляем Hello каждые 5 секунд
+HELLO_INTERVAL = 10  # Отправляем Hello каждые 5 секунд
 
 ACOUSTIC_PARAMS = {
-    'speed_of_sound' = 1500.0,
-    'bitrate' = 1000,
-    'packet_overhead' = 100,
+    'speed_of_sound': 1500.0,
+    'bitrate': 1000,
+    'packet_overhead': 100,
 }
 
 class SimpleNode:
@@ -26,28 +34,48 @@ class SimpleNode:
 
     def calculate_distance(self, target_id):
         x1, y1 = NODES[self.node_id]['position']
-        x2, y2 = NODES[target_id][['position']]
+        x2, y2 = NODES[target_id]['position']
         return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
 
-    def calculate_propagation_delay(seld, target_id):
+    def calculate_propagation_delay(self, target_id):
         distance = self.calculate_distance(target_id)
         return distance / ACOUSTIC_PARAMS['speed_of_sound']
+
+    def calculate_transmission_duration(self, message):
+        message_size = len(json.dumps(message).encode())
+        bits = message_size * 8 + ACOUSTIC_PARAMS['packet_overhead']
+        return bits / ACOUSTIC_PARAMS['bitrate']
+
+    def calculate_total_delivery_time(self, target_id, message):
+        propagation = self.calculate_propagation_delay(target_id)
+        transmission = self.calculate_transmission_duration(message)
+        return propagation + transmission
 
     async def send_message(self, target_id, msg_type, **kwargs):
         """Отправить любое сообщение одному узлу"""
         try:
-            # Подключаемся
-            reader, writer = await asyncio.open_connection(
-                '127.0.0.1',
-                NODES[target_id]['port']
-            )
-
             # Формируем сообщение
             message = {
                 'type': msg_type,
                 'sender': self.node_id,
+                'target': target_id,
                 **kwargs, # Все дополнительные поля
             }
+
+            distance = self.calculate_distance(target_id)
+            propagation_delay = self.calculate_propagation_delay(target_id)
+            transmission_duration = self.calculate_transmission_duration(message)
+            total_delay = self.calculate_total_delivery_time(target_id, message)
+
+            print(f"\n[{self.node_id}] {msg_type} -> {target_id}")
+            print(f"    Расстояние: {distance:.0f}м")
+            print(f"    Задержка: {propagation_delay:.2f}с + {transmission_duration:.2f}с = {total_delay:.2f}с")
+
+            # Подключаемся
+            reader, writer = await asyncio.open_connection(
+                '127.0.0.1',
+                7777, # NODES[target_id]['port'], 
+            )
 
             writer.write(json.dumps(message).encode())
             await writer.drain()
@@ -163,7 +191,54 @@ class SimpleNode:
         # # Отправка одному конкретному узлу
         # await self.send_message('E', 'Request', need_packets=[1,2,3])
 
+class Proxy:
+    def __init__(self, host='127.0.0.1', port=7777):
+        self.host = host
+        self.port = port
+        self.server = None
+
+    async def handle_client(self, reader, writer):
+        try:
+            data = await reader.read(1024)
+            if not data:
+                return
+
+            msg = json.loads(data.decode())
+            print(f"[ПОСРЕДНИК] Получено от {msg.get('sender')} для {msg.get('target')}")
+
+            # Просто пересылаем получателю
+            target = msg.get('target')
+            if target:
+                # Здесь нужно знать порт получателя
+                # Пока просто выводим
+                print(f"[ПОСРЕДНИК] Пересылаю {target}")
+
+            # Подтверждение отправителю
+            # writer.write(json.dumps({'status': 'ok'}).encode())
+            # await writer.drain()
+
+        except Exception as e:
+            print(f"[ПОСРЕДНИК] Ошибка: {e}")
+        finally:
+            writer.close()
+            await writer.wait_closed()
+
+    async def start(self):
+        self.server = await asyncio.start_server(
+            self.handle_client,
+            self.host,
+            self.port
+        )
+        print(f"[ПОСРЕДНИК] Запущен на {self.host}:{self.port}")
+        await self.server.serve_forever()
+
+
 async def main():
+    # Запускаем менеджер среды (посредника)
+    proxy = Proxy()
+    proxy_task = asyncio.create_task(proxy.start()) # Запускаем Proxy в фоне
+    await asyncio.sleep(1) # ждем, когда запустится сервер
+
     # Создаем и запускаем все узлы
     nodes = []
     for node_id in NODES:

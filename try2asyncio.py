@@ -1,5 +1,6 @@
 import asyncio
 import json
+import math
 
 # Конфигурация
 NODES = {
@@ -12,10 +13,25 @@ NODES = {
 
 HELLO_INTERVAL = 5  # Отправляем Hello каждые 5 секунд
 
+ACOUSTIC_PARAMS = {
+    'speed_of_sound' = 1500.0,
+    'bitrate' = 1000,
+    'packet_overhead' = 100,
+}
+
 class SimpleNode:
     def __init__(self, node_id):
         self.node_id = node_id
         self.neighbors = {} # {node_id: {'position': (), 'packets': []}}
+
+    def calculate_distance(self, target_id):
+        x1, y1 = NODES[self.node_id]['position']
+        x2, y2 = NODES[target_id][['position']]
+        return math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+    def calculate_propagation_delay(seld, target_id):
+        distance = self.calculate_distance(target_id)
+        return distance / ACOUSTIC_PARAMS['speed_of_sound']
 
     async def send_message(self, target_id, msg_type, **kwargs):
         """Отправить любое сообщение одному узлу"""

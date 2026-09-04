@@ -120,19 +120,15 @@ class SimpleNode:
             msg_type = msg['type']
 
             if msg_type == 'Hello':
-                sender = msg['sender']
-                print(f"[{self.node_id}] Получил Hello от {sender}")
+                await self.handle_hello(msg, writer)
 
-                # Сохраняем инофрмацию о себе
-                self.neighbors[sender] = {
-                    'position': tuple(msg['position']),
-                    'packets': msg['packets']
-                }
+            # if msg_type == 'Type':
+            #     await self.handle_type(msg, writer)
 
-                # Отправляем подтвержение опционально
-                response = {'type':'HelloAck', 'from': self.node_id}
-                writer.write(json.dumps(response).encode())
-                await writer.drain()
+                # # Отправляем подтвержение опционально
+                # response = {'type':'HelloAck', 'from': self.node_id}
+                # writer.write(json.dumps(response).encode())
+                # await writer.drain()
 
         except Exception as e:
             print(f"[{self.node_id}] Ошибка обработки: {e}")

@@ -1,4 +1,6 @@
 import asyncio
+import time
+from datetime import datetime, timedelta
 import json
 import math
 
@@ -58,18 +60,19 @@ class SimpleNode:
             message = {
                 'type': msg_type,
                 'sender': self.node_id,
-                'target': target_id,
                 **kwargs, # Все дополнительные поля
             }
 
             distance = self.calculate_distance(target_id)
-            propagation_delay = self.calculate_propagation_delay(target_id)
-            transmission_duration = self.calculate_transmission_duration(message)
+            propagation_delay = self.calculate_propagation_delay(target_id)     # Время прохождения одного бита в среде
+            transmission_duration = self.calculate_transmission_duration(message)   # Длительность ифнормационного потока в секундах
             total_delay = self.calculate_total_delivery_time(target_id, message)
 
             print(f"\n[{self.node_id}] {msg_type} -> {target_id}")
             print(f"    Расстояние: {distance:.0f}м")
             print(f"    Задержка: {propagation_delay:.2f}с + {transmission_duration:.2f}с = {total_delay:.2f}с")
+
+            message['target'] = target_id
 
             # Подключаемся
             reader, writer = await asyncio.open_connection(
@@ -77,8 +80,15 @@ class SimpleNode:
                 7777, # NODES[target_id]['port'], 
             )
 
+            current_time = time.time()
+            message['time_st_b'] = current_time + propagation_delay
+            message['time_end_b'] = current_time + propagation_delay + transmission_duration
+            
             writer.write(json.dumps(message).encode())
             await writer.drain()
+
+            # Засыпаем на время модуляции всего сигнала, имитируя передачу
+            await asyncio.sleep(transmission_duration) 
 
             print(f"[{self.node_id}] Отправил {msg_type} -> {target_id}")
 
@@ -87,7 +97,7 @@ class SimpleNode:
             await writer.wait_closed()
 
         except Exception as e:
-             print(f"[{self.node_id}] Ошибка отправки к {target_id}: {e}")
+            print(f"[{self.node_id}] Ошибка отправки к {target_id}: {e}")
 
     async def broadcast(self, msg_type, **kwargs):
         """Отправить Hello всем узлам"""
@@ -117,18 +127,24 @@ class SimpleNode:
 
             # Парсим
             msg = json.loads(data.decode())
-            msg_type = msg['type']
 
-            if msg_type == 'Hello':
-                await self.handle_hello(msg, writer)
+            time_end_b = msg.get('time_end_b')
+            if time_end_b < time.time():
+                return
+            else:
+                await asyncio.sleep(time_end_b - time.time())
+                msg_type = msg['type']
 
-            # if msg_type == 'Type':
-            #     await self.handle_type(msg, writer)
+                if msg_type == 'Hello':
+                    await self.handle_hello(msg, writer)
 
-                # # Отправляем подтвержение опционально
-                # response = {'type':'HelloAck', 'from': self.node_id}
-                # writer.write(json.dumps(response).encode())
-                # await writer.drain()
+                # if msg_type == 'Type':    Шаблон запуска обработчка
+                #     await self.handle_type(msg, writer)
+
+                    # # Отправляем подтвержение опционально         
+                    # response = {'type':'HelloAck', 'from': self.node_id}  ACK-msg, как пример
+                    # writer.write(json.dumps(response).encode())
+                    # await writer.drain()
 
         except Exception as e:
             print(f"[{self.node_id}] Ошибка обработки: {e}")
@@ -193,6 +209,38 @@ class Proxy:
         self.port = port
         self.server = None
 
+    async def send_message(self, target_id, msg):
+        try:
+            msg_out = msg.copy()
+            msg_out.pop('time_st_b', None)
+            msg_out.pop('target', None)
+
+            time_st_b = msg.get('time_st_b')
+
+            # Ждем когда первый бит пройдет по среде
+            if time_st_b > time.time():
+                await asyncio.sleep(time_st_b - time.time())
+
+                # Подключаемся
+                reader, writer = await asyncio.open_connection(
+                    '127.0.0.1',
+                    NODES[target_id]['port'], 
+                )
+
+                writer.write(json.dumps(msg_out).encode())
+                await writer.drain()
+                
+                print(f"[ПОСРЕДНИК] Отправил {msg.get('type')} -> {target_id}")
+
+            else:
+                print(f"[ПОСРЕДНИК] опоздание при отправке {msg.get('msg_type')} -> {target_id}") 
+            # Закрываем
+            writer.close()
+            await writer.wait_closed()
+
+        except Exception as e:
+            print(f"[ПОСРЕДНИК] Ошибка отправки к {target_id}: {e}")
+
     async def handle_client(self, reader, writer):
         try:
             data = await reader.read(1024)
@@ -200,24 +248,25 @@ class Proxy:
                 return
 
             msg = json.loads(data.decode())
-            print(f"[ПОСРЕДНИК] Получено от {msg.get('sender')} для {msg.get('target')}")
+            print(f"[ПОСРЕДНИК] Получено  {msg.get('type')} от {msg.get('sender')} для {msg.get('target')}")
 
             # Просто пересылаем получателю
-            target = msg.get('target')
-            if target:
-                # Здесь нужно знать порт получателя
-                # Пока просто выводим
-                print(f"[ПОСРЕДНИК] Пересылаю {target}")
-
-            # Подтверждение отправителю
-            # writer.write(json.dumps({'status': 'ok'}).encode())
-            # await writer.drain()
-
+            target_id = msg.get('target')
+            if target_id:
+                await self.send_message(target_id, msg)
+                # Закрываем прошлое соединение
+                writer.close()
+                await writer.wait_closed()
+                
+        except json.JSONDecodeError as e:
+            print(f"[ПОСРЕДНИК] Ошибка парсинга JSON: {e}")
         except Exception as e:
-            print(f"[ПОСРЕДНИК] Ошибка: {e}")
+            print(f"[ПОСРЕДНИК] Ошибка обработки: {e}")
         finally:
+            # Закрываем соединение с отправителем
             writer.close()
             await writer.wait_closed()
+            print(f"[ПОСРЕДНИК] Соединение с отправителем закрыто")
 
     async def start(self):
         self.server = await asyncio.start_server(

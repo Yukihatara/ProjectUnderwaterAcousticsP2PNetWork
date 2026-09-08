@@ -1,18 +1,14 @@
 import asyncio
 import time
-from datetime import datetime, timedelta
 import json
 import math
+import os
+
+from temp1 import reset_network_config
+
+os.chdir(os.path.dirname(os.path.abspath(__file__))) # Изменяем рабочую дирректорию
 
 # Конфигурация
-# NODES = {
-#     'A': {'port': 5001, 'position': (0, 100)},
-#     'B': {'port': 5002, 'position': (50, 120)},
-#     'C': {'port': 5003, 'position': (50, 80)},
-#     'D': {'port': 5004, 'position': (50, 40)},
-#     'E': {'port': 5005, 'position': (100, 100)},
-# }
-
 NODES = {
     'A': {'port': 5001, 'position': (0, 1000)},
     'B': {'port': 5002, 'position': (500, 1210)},
@@ -295,6 +291,8 @@ async def main():
     await asyncio.gather(*nodes)
 
 if __name__ == '__main__':
+    # reset_network_config() # подготовка исходной конфигурации
+
     print("Запуск 5 узлов...")
     print("Нажмите Ctrl+C для остановки")
     try:

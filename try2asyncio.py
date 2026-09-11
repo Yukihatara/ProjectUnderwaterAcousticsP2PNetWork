@@ -11,10 +11,10 @@ os.chdir(os.path.dirname(os.path.abspath(__file__))) # Изменяем рабо
 # Конфигурация
 NODES = {
     'A': {'port': 5001, 'position': (0, 1000)},
-    'B': {'port': 5002, 'position': (500, 1210)},
-    'C': {'port': 5003, 'position': (500, 800)},
-    'D': {'port': 5004, 'position': (500, 400)},
-    'E': {'port': 5005, 'position': (1000, 999  )},
+    'B': {'port': 5002, 'position': (500*3, 1210*3)},
+    'C': {'port': 5003, 'position': (500*3, 800*3)},
+    'D': {'port': 5004, 'position': (500*3, 400*3)},
+    'E': {'port': 5005, 'position': (1000*3, 999)},
 }
 
 HELLO_INTERVAL = 10  # Отправляем Hello каждые 5 секунд
@@ -29,6 +29,13 @@ class SimpleNode:
     def __init__(self, node_id):
         self.node_id = node_id
         self.neighbors = {} # {node_id: {'position': (), 'packets': []}}
+
+        # Локеры для half duplex
+        self.tx_lock = asyncio.Lock()
+        self.is_Transmitting = False # True - идет передача
+        self.is_Receiving = False   # True - идет прием
+        # для учёта одновременных приёмов — счётчик
+        self.active_receptions = 0 
 
     def calculate_distance(self, target_id):
         x1, y1 = NODES[self.node_id]['position']
@@ -96,51 +103,73 @@ class SimpleNode:
             print(f"[{self.node_id}] Ошибка отправки к {target_id}: {e}")
 
     async def broadcast(self, msg_type, **kwargs):
-        """Отправить Hello всем узлам"""
-        print(f"\n[{self.node_id}] Отправляю {msg_type} всем...")
+        # Полудуплекс: ждём, пока завершится приём
+        while self.is_Receiving:
+            await asyncio.sleep(0.01)
 
-        # Создаем задачи для кажого узла
-        tasks = []
-        for target_id in NODES:
-            if target_id != self.node_id:
-                tasks.append(self.send_message(target_id, msg_type, **kwargs))
+        async with self.tx_lock:
+            self.is_Transmitting = True
+            try:
+                """Отправить Hello всем узлам"""
+                print(f"\n[{self.node_id}] Отправляю {msg_type} всем...")
 
-        # Ждем завершения всех отправок (конкурентно)
-        if tasks:
-            await asyncio.gather(*tasks)
+                # Создаем задачи для кажого узла
+                tasks = []
+                for target_id in NODES:
+                    if target_id != self.node_id:
+                        tasks.append(self.send_message(target_id, msg_type, **kwargs))
 
-        print(f"[{self.node_id}] {msg_type} отправлены всем!")
+                # Ждем завершения всех отправок (конкурентно)
+                if tasks:
+                    await asyncio.gather(*tasks, return_exceptions=True)
+
+                print(f"[{self.node_id}] {msg_type} отправлены всем!")
+            finally:
+                self.is_Transmitting = False
 
     async def handle_connection(self, reader, writer):
         """Обработка входящего Hello"""
         addr = writer.get_extra_info('peername')
-
         try:
-            # Читаем сообщение
-            data = await reader.read(1024)
-            if not data:
+            # Полудуплекс: не можем принимать, пока передаём.
+            # Пробуем захватить канал без ожидания — иначе потеряем сообщение.
+            if self.is_Transmitting:
+                print(f"[{self.node_id}] ЗАНЯТ передачей — входящее отброшено")
                 return
 
-            # Парсим
-            msg = json.loads(data.decode())
+            self.active_receptions += 1 # Добавляем прием в список
+            self.is_Receiving = True 
+            try:
+                # Читаем сообщение
+                data = await reader.read(1024)
+                if not data:
+                    return
 
-            time_end_b = msg.get('time_end_b')
-            if time_end_b < time.time():
-                return
-            else:
-                await asyncio.sleep(time_end_b - time.time())
-                msg_type = msg['type']
+                # Парсим
+                msg = json.loads(data.decode())
 
-                if msg_type == 'Hello':
-                    await self.handle_hello(msg, writer)
+                time_end_b = msg.get('time_end_b')
+                if time_end_b < time.time():
+                    return
+                else:
+                    await asyncio.sleep(time_end_b - time.time())
+                    msg_type = msg['type']
 
-                # if msg_type == 'Type':    Шаблон запуска обработчка
-                #     await self.handle_type(msg, writer)
+                    if msg_type == 'Hello':
+                        await self.handle_hello(msg, writer)
 
-                    # # Отправляем подтвержение опционально         
-                    # response = {'type':'HelloAck', 'from': self.node_id}  ACK-msg, как пример
-                    # writer.write(json.dumps(response).encode())
-                    # await writer.drain()
+                    # if msg_type == 'Type':    Шаблон запуска обработчка
+                    #     await self.handle_type(msg, writer)
+
+                        # # Отправляем подтвержение опционально         
+                        # response = {'type':'HelloAck', 'from': self.node_id}  ACK-msg, как пример
+                        # writer.write(json.dumps(response).encode())
+                        # await writer.drain()
+
+            finally:
+                self.active_receptions -= 1
+                if self.active_receptions == 0:
+                    self.is_Receiving = False
 
         except Exception as e:
             print(f"[{self.node_id}] Ошибка обработки: {e}")

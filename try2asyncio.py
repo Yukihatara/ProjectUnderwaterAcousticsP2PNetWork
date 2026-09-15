@@ -19,7 +19,8 @@ NODES = {
 }
 
 HELLO_INTERVAL = 10.0  # Отправляем Hello каждые 5 секунд
-HELLO_JITER = 2.0 # Случайная задержка 
+HELLO_JITTER = 2.0 # Случайная задержка 
+
 
 ACOUSTIC_PARAMS = {
     'speed_of_sound': 1500.0,
@@ -73,9 +74,10 @@ class SimpleNode:
             transmission_duration = self.calculate_transmission_duration(message)   # Длительность ифнормационного потока в секундах
             total_delay = self.calculate_total_delivery_time(target_id, message)
 
-            print(f"\n[{self.node_id}] {msg_type} -> {target_id}")
+            # Для отображения посчитанных задержек
+            # print(f"\n[{self.node_id}] {msg_type} -> {target_id}")
             print(f"    Расстояние: {distance:.0f}м")
-            print(f"    Задержка: {propagation_delay:.2f}с + {transmission_duration:.2f}с = {total_delay:.2f}с")
+            # print(f"    Задержка: {propagation_delay:.2f}с + {transmission_duration:.2f}с = {total_delay:.2f}с")
 
             message['target'] = target_id
 
@@ -95,7 +97,8 @@ class SimpleNode:
             # Засыпаем на время модуляции всего сигнала, имитируя передачу
             await asyncio.sleep(transmission_duration) 
 
-            print(f"[{self.node_id}] Отправил {msg_type} -> {target_id}")
+            # Вывод об отправке одному узлу
+            # print(f"[{self.node_id}] Отправил {msg_type} -> {target_id}")
 
             # Закрываем
             writer.close()
@@ -118,14 +121,16 @@ class SimpleNode:
                 # Создаем задачи для кажого узла
                 tasks = []
                 for target_id in NODES:
-                    if target_id != self.node_id:
+                    if target_id != self.node_id and self.calculate_distance(target_id) < 3010:
                         tasks.append(self.send_message(target_id, msg_type, **kwargs))
 
                 # Ждем завершения всех отправок (конкурентно)
                 if tasks:
                     await asyncio.gather(*tasks, return_exceptions=True)
 
-                print(f"[{self.node_id}] {msg_type} отправлены всем!")
+                if msg_type == 'Hello':
+                    print(f"[{self.node_id}] {msg_type} отправлены всем!")
+
             finally:
                 self.is_Transmitting = False
 
@@ -136,7 +141,7 @@ class SimpleNode:
             # Полудуплекс: не можем принимать, пока передаём.
             # Пробуем захватить канал без ожидания — иначе потеряем сообщение.
             if self.is_Transmitting:
-                print(f"[{self.node_id}] ЗАНЯТ передачей — входящее отброшено")
+                print(f"{'\t'*13}[{self.node_id}] ЗАНЯТ передачей — входящее отброшено")
                 return
 
             self.active_receptions += 1 # Добавляем прием в список
@@ -174,14 +179,14 @@ class SimpleNode:
                     self.is_Receiving = False
 
         except Exception as e:
-            print(f"[{self.node_id}] Ошибка обработки: {e}")
+            print(f"{'\t'*13}[{self.node_id}] Ошибка обработки: {e}")
         finally:
             writer.close()
             await writer.wait_closed()
 
     async def handle_hello(self, msg, writer):
         sender = msg['sender']
-        print(f"[{self.node_id}] Получил Hello от {sender}")
+        print(f"{'\t'*13}[{self.node_id}] Получил Hello от {sender}")
 
         # Сохраняем информацию о соседе
         self.neighbors[sender] = {
@@ -262,16 +267,16 @@ class Proxy:
                 writer.write(json.dumps(msg_out).encode())
                 await writer.drain()
                 
-                print(f"[ПОСРЕДНИК] Отправил {msg.get('type')} -> {target_id}")
+                print(f"{'\t'*5}[ПОСРЕДНИК] Отправил {msg.get('type')} -> {target_id}")
 
             else:
-                print(f"[ПОСРЕДНИК] опоздание при отправке {msg.get('msg_type')} -> {target_id}") 
+                print(f"{'\t'*5}[ПОСРЕДНИК] опоздание при отправке {msg.get('msg_type')} -> {target_id}") 
             # Закрываем
             writer.close()
             await writer.wait_closed()
 
         except Exception as e:
-            print(f"[ПОСРЕДНИК] Ошибка отправки к {target_id}: {e}")
+            print(f"{'\t'*5}[ПОСРЕДНИК] Ошибка отправки к {target_id}: {e}")
 
     async def handle_client(self, reader, writer):
         try:
@@ -280,7 +285,7 @@ class Proxy:
                 return
 
             msg = json.loads(data.decode())
-            print(f"[ПОСРЕДНИК] Получено  {msg.get('type')} от {msg.get('sender')} для {msg.get('target')}")
+            print(f"{'\t'*5}[ПОСРЕДНИК] Получено  {msg.get('type')} от {msg.get('sender')} для {msg.get('target')}")
 
             # Просто пересылаем получателю
             target_id = msg.get('target')
@@ -298,7 +303,7 @@ class Proxy:
             # Закрываем соединение с отправителем
             writer.close()
             await writer.wait_closed()
-            print(f"[ПОСРЕДНИК] Соединение с отправителем закрыто")
+            print(f"{'\t'*5}[ПОСРЕДНИК] Соединение с отправителем закрыто")
 
     async def start(self):
         self.server = await asyncio.start_server(
@@ -306,7 +311,7 @@ class Proxy:
             self.host,
             self.port
         )
-        print(f"[ПОСРЕДНИК] Запущен на {self.host}:{self.port}")
+        print(f"{'\t'*5}[ПОСРЕДНИК] Запущен на {self.host}:{self.port}")
         await self.server.serve_forever()
 
 

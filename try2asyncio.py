@@ -3,6 +3,7 @@ import time
 import json
 import math
 import os
+import random
 
 from temp1 import reset_network_config
 
@@ -17,7 +18,8 @@ NODES = {
     'E': {'port': 5005, 'position': (1000*3, 999)},
 }
 
-HELLO_INTERVAL = 10  # Отправляем Hello каждые 5 секунд
+HELLO_INTERVAL = 10.0  # Отправляем Hello каждые 5 секунд
+HELLO_JITER = 2.0 # Случайная задержка 
 
 ACOUSTIC_PARAMS = {
     'speed_of_sound': 1500.0,
@@ -209,14 +211,19 @@ class SimpleNode:
         # Ждем пока сервер запустится
         await asyncio.sleep(1)
 
+        # Начальная случайная задержка — разводим узлы по фазе
+        await asyncio.sleep(random.uniform(0, HELLO_INTERVAL/1.2))
+
         while True:
-            await self.broadcast('Hello', position=NODES[self.node_id]['position'], packets=[])
+            await self.broadcast('Hello',
+                                 position=NODES[self.node_id]['position'],
+                                 packets=[])
 
             if self.neighbors:
                 print(f"[{self.node_id}] Знаю о соседях: {list(self.neighbors.keys())}")
 
             # Ждем перед следующей отправкой
-            await asyncio.sleep(HELLO_INTERVAL)
+            await asyncio.sleep(HELLO_INTERVAL + random.uniform(-HELLO_JITTER, HELLO_JITTER))
 
         # - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - - 
         # Отправка метаданных

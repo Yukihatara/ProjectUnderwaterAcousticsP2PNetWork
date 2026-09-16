@@ -10,17 +10,17 @@ from temp1 import reset_network_config
 os.chdir(os.path.dirname(os.path.abspath(__file__))) # Изменяем рабочую дирректорию
 
 # Конфигурация
+MAX_RANGE = 2400
 NODES = {
-    'A': {'port': 5001, 'position': (0, 1000)},
-    'B': {'port': 5002, 'position': (500*3, 1210*3)},
-    'C': {'port': 5003, 'position': (500*3, 800*3)},
-    'D': {'port': 5004, 'position': (500*3, 400*3)},
-    'E': {'port': 5005, 'position': (1000*3, 999)},
+    'A': {'port': 5001, 'position': (0, 2/3 * MAX_RANGE)},
+    'B': {'port': 5002, 'position': (1.75/3 * MAX_RANGE, 3.5/3 * MAX_RANGE)},
+    'C': {'port': 5003, 'position': (1.75/3 * MAX_RANGE, 1.5/3 * MAX_RANGE)},
+    'D': {'port': 5004, 'position': (1.75/3 * MAX_RANGE, 0)},
+    'E': {'port': 5005, 'position': (1.75/3 * 2 * MAX_RANGE, 2/3 * MAX_RANGE)},
 }
 
 HELLO_INTERVAL = 10.0  # Отправляем Hello каждые 5 секунд
 HELLO_JITTER = 2.0 # Случайная задержка 
-
 
 ACOUSTIC_PARAMS = {
     'speed_of_sound': 1500.0,
@@ -121,7 +121,7 @@ class SimpleNode:
                 # Создаем задачи для кажого узла
                 tasks = []
                 for target_id in NODES:
-                    if target_id != self.node_id and self.calculate_distance(target_id) < 3010:
+                    if target_id != self.node_id and self.calculate_distance(target_id) < MAX_RANGE:
                         tasks.append(self.send_message(target_id, msg_type, **kwargs))
 
                 # Ждем завершения всех отправок (конкурентно)
@@ -222,7 +222,7 @@ class SimpleNode:
         while True:
             await self.broadcast('Hello',
                                  position=NODES[self.node_id]['position'],
-                                 packets=[])
+                                 packets=[],)
 
             if self.neighbors:
                 print(f"[{self.node_id}] Знаю о соседях: {list(self.neighbors.keys())}")

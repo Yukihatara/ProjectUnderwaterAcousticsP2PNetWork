@@ -1,8 +1,8 @@
 # main.py
 import asyncio
 
-from layers.node import Node
-from layers.proxy import Proxy
+from layers1.node import Node
+from layers1.proxy import Proxy
 
 MAX_RANGE = 2400
 NODES = {

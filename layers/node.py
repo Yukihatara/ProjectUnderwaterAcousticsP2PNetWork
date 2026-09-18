@@ -80,7 +80,7 @@ class Node:
     # ---------- Входящая передача ----------
     async def _handle_connection(self, reader, writer):
         if not self.mac.try_acquire_rx():
-            print(f"\t[{self.node_id}] ЗАНЯТ передачей — входящее отброшено")
+            print(f"[{self.node_id}] ЗАНЯТ передачей — входящее отброшено")
             writer.close()
             await writer.wait_closed()
             return
@@ -100,10 +100,10 @@ class Node:
             # поднимаем на прикладной уровень
             if msg['type'] == 'Hello':
                 sender = self.app.on_hello(msg)
-                print(f"\t[{self.node_id}] Получил Hello от {sender}")
+                print(f"[{self.node_id}] Получил Hello от {sender}")
 
         except Exception as e:
-            print(f"\t[{self.node_id}] Ошибка обработки: {e}")
+            print(f"[{self.node_id}] Ошибка обработки: {e}")
         finally:
             self.mac.release_rx()
             writer.close()

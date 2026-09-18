@@ -11,7 +11,7 @@ class Proxy:
 
     async def _deliver(self, target_id, msg):
         time_st_b = msg.get('time_st_b', 0)
-        if time_st_b >= time.time():
+        if time_st_b > time.time():
             await asyncio.sleep(time_st_b - time.time())
 
         out = {k: v for k, v in msg.items() if k not in ('time_st_b', 'target')}

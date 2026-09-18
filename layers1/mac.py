@@ -1,6 +1,8 @@
 # layers/mac.py
 import asyncio
 
+# NAV (Network Allocation Vector) - "виртуальная занятость среды". Когда услышали чужой RTS или CTS
+
 class MACLayer:
     """Канальный уровень: доступ к среде, half-duplex."""
 
